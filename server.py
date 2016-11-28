@@ -36,17 +36,40 @@ def vote():
     if voter == None:
         return "Invalid Voter ID"
     vote = Vote.query.filter_by(voter=int(request.form["voter_id"])).first()
-    print(vote, voter)
+    
+    ballot = {}
+    for i in range(len(Candidate.query.all())):
+        try:
+            k = "vote%d"%i
+            ballot[k] = request.form[k]
+        except:
+            return "Invalid vote format"
+
+    #malleability check: ensure row sum is 1
+    rowsum = None
+    for vx in ballot.values():
+        v = int(vx)
+        #malleability check: ensure each vote is 0 or 1
+        tmpv = decrypt(priv, pub, v)
+        if tmpv != 1 and tmpv != 0:
+            return "Invalid vote format"        
+        if rowsum == None:
+            rowsum = v
+        else:
+            rowsum = e_add(pub, rowsum, v)
+    rsd = decrypt(priv, pub, rowsum)
+    if rowsum == None or rsd != 1:
+        return "Invalid vote format"
+
     if vote == None:
-        v = Vote()
-        v.voter = voter.voter_id
-        for i in range(len(Candidate.query.all())):
+        vo = Vote() #make new vote entry
+        vo.voter = voter.voter_id #set entry to voter id
+        for k,v in ballot.items(): #assign vote values to vote entry
             try:
-                k = "vote%d"%i
-                setattr(v, k, request.form[k])
+                setattr(vo, k, v)
             except AttributeError:
                 return "Invalid vote format"
-        db_session.add(v)
+        db_session.add(vo)
         db_session.commit()
         return "Vote successful"
     else:
