@@ -25,7 +25,12 @@ class Vote(Base):
 def initialize_election():
     #need to blow away the votes table for each election
     #this is because columns change with number of candidates
-    Vote.__table__.drop(bind=engine)
+    try:
+        Vote.__table__.drop(bind=engine)
+    except:
+        pass
+    
+
 
     Candidate.query.delete()
     #construct tables for a specific election
@@ -41,5 +46,7 @@ def initialize_election():
 
     for i,c in enumerate(running_candidates):
         setattr(Vote, "vote%d"%i, Column(String(512), unique=False))
+
+    Vote.__table__.create(bind=engine)
 
 initialize_election()

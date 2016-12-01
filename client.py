@@ -5,6 +5,9 @@ from urllib.request import Request, urlopen
 import json
 from tkinter import *
 from paillier.paillier import *
+import rsa
+from fractions import gcd
+
 
 '''
 
@@ -51,7 +54,7 @@ def check_registration():
     Button(separator, text='Submit', command=callback).grid(row=2, sticky=W)
 
 
-def send_vote(candidates, vote):
+def send_vote(candidates, vote): 
 
     pub = PublicKey.from_n(int(message_server("get_public_key")))
 
@@ -62,9 +65,11 @@ def send_vote(candidates, vote):
     #encrypt the votes
     e_v = [encrypt(pub, vx) for vx in v]
 
+    #get blind signature on encrypted vote
+    signature = blind_sign(e_v)
+
     #send encrypted votes to server
-    data = {"vote%d"%i:x for i,x in enumerate(e_v)}
-    data["voter_id"] = voter_id
+    data = {"ballot":e_v, "voter_id":voter_id, "signature":signature}
     message_server("vote",data)
     
 def present_choices(candidates):
@@ -82,6 +87,45 @@ def present_choices(candidates):
         Radiobutton(separator, text=c, variable=v, value=i).grid(row=i+1, sticky=W)
 
     Button(separator, text='Submit', command=onclick).grid(row=4, sticky=W, pady=4)
+
+def egcd(a, b):
+    if a == 0:
+        return (b, 0, 1)
+    else:
+        g, y, x = egcd(b % a, a)
+        return (g, x - (b // a) * y, y)
+
+def modinv(a, m):
+    g, x, y = egcd(a, m)
+    if g != 1:
+        raise Exception('modular inverse does not exist')
+    else:
+        return x % m
+
+#blind sign the vote with RSA
+
+def blind_sign(vote):
+
+    data = json.loads(message_server("get_public_rsa_key"))
+
+    e = data["e"]
+    n = data["n"]
+
+    #get random mask r that is coprime to n
+    while True:
+        r = rsa.randnum.randint(n)
+        if gcd(r,n) == 1:
+            break
+
+    #mask the vote
+
+    ctxt = [(v * r**e) % n for v in vote]
+
+    #divide by r in mod n
+    raw_signature = json.loads(message_server("get_blind_signature",{"message":ctxt}))
+    signature = [(k * modinv(r,n)) % n for k in raw_signature]
+
+    return signature
 
 
 
