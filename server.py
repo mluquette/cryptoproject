@@ -21,25 +21,24 @@ def shutdown_session(exception=None):
 
 @app.route("/check_registration", methods=["POST"])
 def check_registration():
-    voter = Voter.query.filter_by(voter_id=int(request.form["voter_id"])).first()
+    voter = Voter.query.filter_by(voter_id=request.json["voter_id"]).first()
     if voter != None:
         return "true"
     else:
         return "false"
 
-@app.route("/get_public_key", methods=["POST"])
+@app.route("/get_public_key", methods=["GET","POST"])
 def get_public_key():
     return str(pub.n)
 
-@app.route("/get_public_rsa_key", methods=["POST"])
+@app.route("/get_public_rsa_key", methods=["GET","POST"])
 def get_public_rsa_key():
-    return json.dumps({"e":pub2.e, "n":pub2.n})
+    return json.dumps({"e":str(pub2.e), "n":str(pub2.n)})
 
 @app.route("/get_blind_signature", methods=["POST"])
 def get_blind_signature():
     #blind sign the message (return m^d)
-    message = json.loads(request.form["message"])
-    return json.dumps([rsa.core.decrypt_int(x, priv2.d, priv2.n) for x in message])
+    return json.dumps([rsa.core.decrypt_int(int(x), priv2.d, priv2.n) for x in request.json])
 
 @app.route("/get_candidates", methods=["GET", "POST"])
 def get_candidates():
@@ -48,23 +47,30 @@ def get_candidates():
 @app.route("/vote", methods=["POST"])
 def vote():
     #check if voter has valid voter id
-    voter = Voter.query.filter_by(voter_id=int(request.form["voter_id"])).first()
+    voter = Voter.query.filter_by(voter_id=request.json["voter_id"]).first()
     if voter == None:
         return "Invalid Voter ID"
 
-    vote = Vote.query.filter_by(voter=int(request.form["voter_id"])).first()
+    vote = Vote.query.filter_by(voter=request.json["voter_id"]).first()
     if vote == None:
 
         #check if ballot has correct number of votes
-        ballot = request.form["ballot"]
+        ballot = request.json["ballot"]
         if len(ballot) != len(Candidate.query.all()):
-            return "Invalid vote format"
+            return "Invalid vote format1"
 
         #check blind signature
         #ensure signature matches message aka sig == m^e
-        for i,sig in enumerate(request.form["signature"]):
-            if rsa.core.encrypt_int(sig, pub2.e, pub2.n) != ballot[i]:
-                return "Invalid vote format"
+        signature = request.json["signature"]
+        for i,sig in enumerate(signature):
+
+            a = rsa.core.encrypt_int(int(sig), pub2.e, pub2.n)
+
+            print(a)
+            print(ballot[i] % pub2.n)
+            
+            if a != (ballot[i] % pub2.n):
+                return "Invalid vote format2"
             
         
 
@@ -85,7 +91,7 @@ def vote():
             try:
                 setattr(vo, "vote%d"%i, str(v))
             except AttributeError:
-                return "Invalid vote format"
+                return "Invalid vote format3"
         db_session.add(vo)
         db_session.commit()
         return "Vote successful"

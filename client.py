@@ -22,13 +22,19 @@ voting process:
 
 server_url = "http://127.0.0.1:5000/"
 
+#def message_server(url,data={}):
+#    post_data = urlencode(data)
+#    req = Request(server_url + url, post_data.encode())
+#    data = urlopen(req).read().decode()
+#    return data
+
 def message_server(url,data={}):
-    post_data = urlencode(data)
-    req = Request(server_url + url, post_data.encode())
-    data = urlopen(req).read().decode()
-    return data
-
-
+    req = Request(server_url + url)
+    req.add_header('Content-Type', 'application/json; charset=utf-8')
+    jsondata = json.dumps(data).encode()
+    req.add_header('Content-Length', len(jsondata))
+    response = urlopen(req, jsondata).read().decode()
+    return response
 
 root = Tk()
 root.geometry('{}x{}'.format(300,300))
@@ -54,7 +60,7 @@ def check_registration():
     Button(separator, text='Submit', command=callback).grid(row=2, sticky=W)
 
 
-def send_vote(candidates, vote): 
+def send_vote(candidates, vote, separator): 
 
     pub = PublicKey.from_n(int(message_server("get_public_key")))
 
@@ -70,7 +76,8 @@ def send_vote(candidates, vote):
 
     #send encrypted votes to server
     data = {"ballot":e_v, "voter_id":voter_id, "signature":signature}
-    message_server("vote",data)
+    ret = message_server("vote",data)
+    Label(separator, text=ret, fg="red").grid(row=2, column=1, sticky=W)
     
 def present_choices(candidates):
     separator = Frame(height=2, bd=1, relief=SUNKEN)
@@ -81,26 +88,12 @@ def present_choices(candidates):
     v = IntVar()
 
     def onclick():
-        send_vote(candidates, v.get())
+        send_vote(candidates, v.get(), separator)
 
     for i,c in enumerate(candidates):
         Radiobutton(separator, text=c, variable=v, value=i).grid(row=i+1, sticky=W)
 
     Button(separator, text='Submit', command=onclick).grid(row=4, sticky=W, pady=4)
-
-def egcd(a, b):
-    if a == 0:
-        return (b, 0, 1)
-    else:
-        g, y, x = egcd(b % a, a)
-        return (g, x - (b // a) * y, y)
-
-def modinv(a, m):
-    g, x, y = egcd(a, m)
-    if g != 1:
-        raise Exception('modular inverse does not exist')
-    else:
-        return x % m
 
 #blind sign the vote with RSA
 
@@ -108,8 +101,8 @@ def blind_sign(vote):
 
     data = json.loads(message_server("get_public_rsa_key"))
 
-    e = data["e"]
-    n = data["n"]
+    e = int(data["e"])
+    n = int(data["n"])
 
     #get random mask r that is coprime to n
     while True:
@@ -118,13 +111,11 @@ def blind_sign(vote):
             break
 
     #mask the vote
-
-    ctxt = [(v * r**e) % n for v in vote]
+    ctxt = [str(v*modpow(r,e,n)) for v in vote]
 
     #divide by r in mod n
-    raw_signature = json.loads(message_server("get_blind_signature",{"message":ctxt}))
-    signature = [(k * modinv(r,n)) % n for k in raw_signature]
-
+    raw_signature = json.loads(message_server("get_blind_signature",ctxt))
+    signature = [(int(k) * invmod(r,n)) % n for k in raw_signature]
     return signature
 
 
