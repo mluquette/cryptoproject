@@ -8,6 +8,8 @@ from paillier.paillier import *
 import rsa
 from fractions import gcd
 
+ZKP_ITERATIONS = 9
+
 
 '''
 
@@ -38,6 +40,7 @@ def message_server(url,data={}):
 
 root = Tk()
 root.geometry('{}x{}'.format(300,300))
+root.wm_title("Secure Voting Client")
 
 voter_id = None
 
@@ -65,12 +68,18 @@ def send_vote(candidates, vote, separator):
     pub = PublicKey.from_n(int(message_server("get_public_key")))
 
     #convert the vote to one-hot
-    v = [0]*len(candidates)
-    v[vote] = 1
+    m = [0]*len(candidates)
+    m[vote] = 1
 
     #encrypt the votes
-    e_v = [encrypt(pub, vx) for vx in v]
+    e_v = []
+    xs = []
 
+    for mx in m:
+        a,b = encrypt(pub, mx)
+        e_v.append(a)
+        xs.append(b)
+    
     #get blind signature on encrypted vote
     signature = blind_sign(e_v)
 
@@ -78,6 +87,59 @@ def send_vote(candidates, vote, separator):
     data = {"ballot":e_v, "voter_id":voter_id, "signature":signature}
     ret = message_server("vote",data)
     Label(separator, text=ret, fg="red").grid(row=2, column=1, sticky=W)
+
+    for i in range(ZKP_ITERATIONS):
+        r = []
+        u = []
+        ss = []
+        for i in range(len(candidates)):
+            r.append(rsa.randnum.randint(pub.n))
+            a,b = encrypt(pub, r[i])
+            u.append(a)
+            ss.append(b)
+
+        data = {"u":[str(x) for x in u], "voter_id":voter_id}
+            
+        es = json.loads(message_server("zkp_witness",data))
+
+        #create v,w for every e
+
+        v = []
+        w = []
+
+        for i,e in enumerate(es):
+            v.append((r[i] - e * m[i]) % pub.n_sq)
+            w.append((ss[i] * invmod(xs[i]**e,pub.n_sq)) % pub.n_sq)
+ 
+        data = {"v":v,"w":w,"voter_id":voter_id}
+
+        message_server("zkp_check",data)
+
+
+def display_results():
+    separator = Frame(height=2, bd=1, relief=SUNKEN)
+    separator.pack(fill=X, padx=5, pady=5)
+
+
+    
+    
+    l = Label(separator, text="")
+    l.grid(row=1, column=0, sticky=W)
+
+    def refresh():
+        res = message_server("display_results")
+        print(res)
+        l.config(text = res)
+
+    def xuit():
+        separator.pack_forget()
+        check_registration()
+
+    refresh()
+    
+    Button(separator, text='reload', command=refresh).grid(row=2, sticky=W)
+    Button(separator, text='quit', command=xuit).grid(row=2, sticky=E)
+    
     
 def present_choices(candidates):
     separator = Frame(height=2, bd=1, relief=SUNKEN)
@@ -89,6 +151,9 @@ def present_choices(candidates):
 
     def onclick():
         send_vote(candidates, v.get(), separator)
+        separator.pack_forget()
+        #check_registration()
+        display_results()
 
     for i,c in enumerate(candidates):
         Radiobutton(separator, text=c, variable=v, value=i).grid(row=i+1, sticky=W)

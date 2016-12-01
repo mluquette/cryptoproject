@@ -68,7 +68,7 @@ def encrypt(pub, plain):
             break
     x = pow(r, pub.n, pub.n_sq)
     cipher = (pow(pub.g, plain, pub.n_sq) * x) % pub.n_sq
-    return cipher
+    return cipher, r
 
 def e_add(pub, a, b):
     """Add one encrypted integer to another"""
